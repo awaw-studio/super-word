@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Word - Pro Edition</title>
+    <style>
+        :root {
+            --mario-red: #ff0000;
+            --sky-blue: #5c94fc;
+            --brick: #944824;
+            --gold: #f1c40f;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Courier New', monospace;
+            background-color: #222;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* 顶部控制面板 */
+        #setup-bar {
+            width: 100%;
+            background: #444;
+            padding: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            border-bottom: 4px solid var(--mario-red);
+        }
+
+        .setting-group { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+        select, button { padding: 8px; border: 2px solid #000; cursor: pointer; font-weight: bold; }
+        
+        .upload-btn { background: #27ae60; color: white; border: none; }
+        .start-btn { background: var(--mario-red); color: white; border: none; padding: 10px 20px; }
+        .active-custom { border: 2px solid #2ecc71; position: relative; }
+        .active-custom::after { content: " (已锁定自定义)"; font-size: 10px; color: #2ecc71; }
+
+        /* 游戏主容器 */
+        #game-stage {
+            width: 800px;
+            height: 400px;
+            background: var(--sky-blue);
+            position: relative;
+            margin-top: 20px;
+            border: 6px solid #fff;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            image-rendering: pixelated;
+        }
+
+        .ground {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 40px;
+            background: repeating-linear-gradient(90deg, var(--brick), var(--brick) 40px, #6b341a 40px, #6b341a 80px);
+        }
+
+        /* 角色样式 */
+        .char { position: absolute; bottom: 40px; font-size: 70px; display: flex; flex-direction: column; align-items: center; z-index: 10; }
+        #mario { left: 80px; transition: 0.3s; animation: bounce 0.6s infinite alternate; }
+        #mario.hurt { animation: shake 0.1s infinite; filter: grayscale(1) invert(1); }
+        #mario.super { filter: drop-shadow(0 0 15px gold); transform: scale(1.2); }
+        
+        #boss { right: 80px; }
+        .hp-container { width: 100px; height: 12px; background: #333; border: 2px solid #000; margin-bottom: 5px; }
+        #hp-bar { width: 100%; height: 100%; background: #2ecc71; transition: width 0.3s; }
+        .boss-angry { animation: flash 0.3s infinite; }
+
+        /* 输入区域 */
+        #ui-area { margin-top: 20px; text-align: center; }
+        #word-input { font-size: 28px; padding: 10px; width: 400px; text-align: center; border: 4px solid var(--brick); border-radius: 8px; outline: none; }
+        
+        .stats-info { display: flex; gap: 30px; margin: 15px 0; font-size: 18px; color: var(--gold); }
+        .hint { color: #aaa; font-size: 14px; margin-top: 10px; }
+
+        /* 动画 */
+        @keyframes bounce { from { bottom: 40px; } to { bottom: 55px; } }
+        @keyframes shake { 0% { transform: translateX(-10px); } 100% { transform: translateX(10px); } }
+        @keyframes flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        @keyframes fireball-fly { 0% { left: 150px; opacity: 1; } 100% { left: 650px; opacity: 0; } }
+
+        .fireball { position: absolute; bottom: 80px; font-size: 30px; animation: fireball-fly 0.5s linear forwards; z-index: 5; }
+
+        /* 覆盖层 */
+        #overlay {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.95);
+            padding: 30px;
+            border: 4px solid var(--gold);
+            z-index: 1000;
+            width: 500px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div id="setup-bar">
+    <div class="setting-group" id="grade-container">
+        <label>词库:</label>
+        <select id="grade-select">
+            <option value="3">NAPLAN Grade 3</option>
+            <option value="5">NAPLAN Grade 5</option>
+            <option value="7">NAPLAN Grade 7</option>
+            <option value="9">NAPLAN Grade 9</option>
+        </select>
+    </div>
+
+    <input type="file" id="file-input" style="display:none" accept=".json,.txt">
+    <button class="upload-btn" onclick="document.getElementById('file-input').click()">📁 上传自定义词库</button>
+
+    <div class="setting-group">
+        <label>总关卡:</label>
+        <select id="set-levels"><option value="3">3</option><option value="5">5</option><option value="10">10</option></select>
+    </div>
+    
+    <div class="setting-group">
+        <label>词数/关:</label>
+        <select id="set-words"><option value="10">10</option><option value="15" selected>15</option><option value="20">20</option></select>
+    </div>
+
+    <button class="start-btn" onclick="game.startNewGame()">开始游戏</button>
+</div>
+
+<div class="stats-info">
+    <span>LEVEL: <b id="ui-level">1</b></span>
+    <span>COINS: <b id="ui-coins">0</b></span>
+    <span>COMBO: <b id="ui-combo">0</b></span>
+</div>
+
+<div id="game-stage">
+    <div id="mario" class="char">👰🏻‍♀️</div>
+    <div id="boss" class="char">
+        <div class="hp-container"><div id="hp-bar"></div></div>
+        <div id="boss-emoji">🐲</div>
+    </div>
+    <div class="ground"></div>
+</div>
+
+<div id="ui-area">
+    <input type="text" id="word-input" placeholder="点击开始游戏..." autocomplete="off" disabled>
+    <p class="hint">【Enter】确认提交 | 【空格键 Space】重听单词</p>
+</div>
+
+<div id="overlay">
+    <h1 id="over-title">LEVEL CLEAR</h1>
+    <div id="over-body"></div>
+    <br>
+    <button onclick="game.closeOverlay()" style="padding: 10px 30px; cursor:pointer;">点击继续</button>
+</div>
+
+<script>
+/**
+ * 默认词库 (示例)
+ */
+const DEFAULT_DB = {
+    3: ["apple", "bread", "chair", "dance", "earth", "fruit", "green", "house", "island", "juice", "knife", "lemon", "music", "night", "ocean", "paper", "queen", "river", "smile", "table"],
+    5: ["absence", "boundary", "calendar", "describe", "evidence", "frequency", "government", "horizon", "instance", "journey", "knowledge", "language", "measure", "negative", "opposite", "physical", "quality", "resource", "science", "thousand"],
+    7: ["abandon", "beneficial", "capacity", "drastic", "efficient", "flexible", "generate", "highlight", "indicate", "justify", "liberty", "majority", "notable", "objective", "precise", "relevant", "sustainable", "tendency", "ultimate", "variation"],
+    9: ["aesthetic", "benevolent", "conjecture", "deteriorate", "eloquent", "fluctuate", "gregarious", "hierarchy", "idiosyncrasy", "juxtapose", "kinship", "labyrinth", "meticulous", "nostalgia", "obfuscate", "pragmatic", "quarantine", "resilient", "scrutinize", "transient"]
+};
+
+const BOSSES = ["🐲", "👹", "👾", "👻", "🧟‍♂️", "🐙", "🧛🏻‍♀️", "🦇", "🤡", "🦖"];
+
+const game = {
+    customWords: null, 
+    usedWords: new Set(), // 记忆已使用的单词，防止跨关卡重复
+    level: 1,
+    coins: 0,
+    combo: 0,
+    currentWords: [],
+    currentIndex: 0,
+    correctCount: 0,
+    mistakes: [],
+    
+    startNewGame() {
+        this.level = 1;
+        this.coins = 0;
+        this.mistakes = [];
+        this.usedWords.clear(); // 游戏重新开始，重置去重池
+        
+        this.totalLevels = parseInt(document.getElementById('set-levels').value);
+        this.wordsPerLevel = parseInt(document.getElementById('set-words').value);
+        
+        document.getElementById('word-input').disabled = false;
+        document.getElementById('word-input').focus();
+        
+        this.initLevel();
+    },
+
+    initLevel() {
+        const grade = document.getElementById('grade-select').value;
+        const pool = this.customWords ? this.customWords : DEFAULT_DB[grade];
+        
+        // 核心：过滤掉本场比赛已经出现过的单词
+        let availablePool = pool.filter(w => !this.usedWords.has(w));
+        
+        // 如果词库不够用了，重置一下池子（兜底逻辑）
+        if (availablePool.length < this.wordsPerLevel) {
+            this.usedWords.clear();
+            availablePool = pool;
+        }
+
+        this.currentIndex = 0;
+        this.correctCount = 0;
+        this.combo = 0;
+        
+        // 随机抽选不重复的词
+        this.currentWords = [...availablePool].sort(() => Math.random() - 0.5).slice(0, this.wordsPerLevel);
+        
+        // 标记为已使用
+        this.currentWords.forEach(w => this.usedWords.add(w));
+
+        this.resetStageVisuals();
+        this.updateUI();
+        this.playTone(440, 0.1); 
+        this.loadWord();
+    },
+
+    loadWord() {
+        if (this.currentIndex >= this.wordsPerLevel) {
+            this.handleLevelEnd();
+            return;
+        }
+        this.speak(this.currentWords[this.currentIndex]);
+        document.getElementById('word-input').value = "";
+    },
+
+    speak(word) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(word);
+        msg.rate = 0.75;
+        msg.lang = 'en-US';
+        window.speechSynthesis.speak(msg);
+    },
+
+    checkAnswer() {
+        const input = document.getElementById('word-input').value.trim().toLowerCase();
+        const target = this.currentWords[this.currentIndex].toLowerCase();
+        
+        if (input === target) {
+            this.onCorrect();
+        } else {
+            this.onWrong(input, target);
+        }
+
+        this.currentIndex++;
+        setTimeout(() => this.loadWord(), 800);
+    },
+
+    onCorrect() {
+        this.coins += 10;
+        this.combo++;
+        this.correctCount++;
+        this.createFireball();
+        this.playTone(600, 0.1);
+        if (this.combo >= 3) document.getElementById('mario').classList.add('super');
+        
+        const hp = 100 - (this.currentIndex + 1) / this.wordsPerLevel * 100;
+        document.getElementById('hp-bar').style.width = hp + "%";
+        if (hp < 40) document.getElementById('boss').classList.add('boss-angry');
+        this.updateUI();
+    },
+
+    onWrong(input, target) {
+        this.combo = 0;
+        this.coins = Math.max(0, this.coins - 5);
+        this.mistakes.push({ word: target, user: input || "[空白]" });
+        
+        const m = document.getElementById('mario');
+        m.classList.remove('super');
+        m.classList.add('hurt');
+        this.playTone(150, 0.4);
+        setTimeout(() => m.classList.remove('hurt'), 500);
+        this.updateUI();
+    },
+
+    handleLevelEnd() {
+        const rate = (this.correctCount / this.wordsPerLevel) * 100;
+        const isPass = rate >= 80;
+        const ov = document.getElementById('overlay');
+        
+        if (isPass) {
+            if (this.level >= this.totalLevels) {
+                this.showFinalCertificate();
+            } else {
+                document.getElementById('over-title').innerText = "LEVEL COMPLETE!";
+                document.getElementById('over-body').innerHTML = `正确率: ${rate}% <br> 准备好挑战下一关了吗？`;
+                ov.style.display = "block";
+            }
+        } else {
+            document.getElementById('over-title').innerText = "挑战失败";
+            document.getElementById('over-body').innerHTML = `正确率不足 80% (${rate}%) <br> 为了变强，请重复本关练习！`;
+            // 如果没过关，为了让用户练习，要把这组词从“已用”里吐出来一部分，下次可能还会练到
+            this.currentWords.forEach(w => this.usedWords.delete(w));
+            ov.style.display = "block";
+        }
+    },
+
+    showFinalCertificate() {
+        document.getElementById('over-title').innerText = "👑 Word Queen 👑";
+        let msHtml = this.mistakes.map(m => `<li>${m.word} <span style="color:#e74c3c">(你写成了: ${m.user})</span></li>`).join('');
+        document.getElementById('over-body').innerHTML = `
+            <h3>Congrats on passing ${this.totalLevels} levels！</h3>
+            <p>Final Coins: ${this.coins} 🪙</p>
+            <div style="text-align:left; background:#111; padding:15px; font-size:13px; max-height:150px; overflow-y:auto;">
+                <b>Review List:</b><ul>${msHtml || 'All correct，you are the true words master！'}</ul>
+            </div>
+        `;
+        document.getElementById('overlay').style.display = "block";
+    },
+
+    closeOverlay() {
+        const rate = (this.correctCount / this.wordsPerLevel) * 100;
+        document.getElementById('overlay').style.display = "none";
+        
+        if (rate >= 80) {
+            if (this.level < this.totalLevels) {
+                this.level++;
+                this.initLevel(); // 会自动过滤掉已用单词
+            } else {
+                // 通关后点继续回到初始状态
+                location.reload();
+            }
+        } else {
+            this.initLevel(); // 重新开始当前关
+        }
+    },
+
+    resetStageVisuals() {
+        document.getElementById('hp-bar').style.width = "100%";
+        document.getElementById('boss').classList.remove('boss-angry');
+        document.getElementById('boss-emoji').innerText = BOSSES[(this.level-1) % BOSSES.length];
+        document.getElementById('mario').classList.remove('super');
+    },
+
+    updateUI() {
+        document.getElementById('ui-level').innerText = this.level;
+        document.getElementById('ui-coins').innerText = this.coins;
+        document.getElementById('ui-combo').innerText = this.combo;
+    },
+
+    createFireball() {
+        const fb = document.createElement('div');
+        fb.className = 'fireball';
+        fb.innerText = '🔥';
+        document.getElementById('game-stage').appendChild(fb);
+        setTimeout(() => fb.remove(), 500);
+    },
+
+    playTone(freq, duration) {
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        } catch(e) {}
+    }
+};
+
+// 输入框快捷键监听
+document.getElementById('word-input').addEventListener('keydown', function(e) {
+    if (e.code === 'Space') {
+        e.preventDefault(); // 关键：阻止空格输入到输入框
+        game.speak(game.currentWords[game.currentIndex]);
+    }
+    if (e.key === 'Enter') {
+        game.checkAnswer();
+    }
+});
+
+// 文件上传
+document.getElementById('file-input').onchange = function(e) {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+        let words = [];
+        try {
+            words = JSON.parse(ev.target.result);
+        } catch {
+            words = ev.target.result.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
+        }
+        if (words.length > 0) {
+            game.customWords = words;
+            document.getElementById('grade-container').classList.add('active-custom');
+            document.getElementById('grade-select').disabled = true;
+            alert(`自定义词库加载成功，共 ${words.length} 词！`);
+        }
+    };
+    reader.readAsText(file);
+};
+</script>
+</body>
+</html>
