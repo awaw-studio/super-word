@@ -6,6 +6,26 @@
     <title>Super Word - Pro Edition</title>
     <link rel="icon" href="favicon.png" type="image/png">
     <style>
+        .logo-area img {
+    transition: transform 0.2s;
+    cursor: pointer;
+}
+
+.logo-area img:hover {
+    animation: coin-jump 0.4s ease-out; /* 悬停时触发跳动 */
+}
+
+@keyframes coin-jump {
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-15px) rotateY(180deg); }
+    100% { transform: translateY(0); }
+}
+
+/* 适配手机屏幕 */
+@media (max-width: 600px) {
+    #setup-bar { flex-direction: column; align-items: center; }
+    .logo-area { margin-right: 0; margin-bottom: 10px; }
+}
         :root {
             --mario-red: #ff0000;
             --sky-blue: #5c94fc;
@@ -109,6 +129,10 @@
 <body>
 
 <div id="setup-bar">
+    <div class="logo-area" style="display: flex; align-items: center; margin-right: 20px;">
+        <img src="logo.png" alt="AWAW STUDIOS" 
+             style="height: 50px; image-rendering: pixelated; filter: drop-shadow(0 0 5px var(--gold));">
+    </div>
     <div class="setting-group" id="grade-container">
         <label>词库:</label>
         <select id="grade-select">
@@ -412,3 +436,4 @@ document.getElementById('file-input').onchange = function(e) {
 </body>
 
 </html>
+
